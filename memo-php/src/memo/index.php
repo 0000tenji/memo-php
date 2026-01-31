@@ -1,70 +1,122 @@
-<!DOCTYPE html>
-<html lang="ja">
 <?php
-  session_start();
-  require '../common/auth.php';
-  include_once "../common/header.php";
-  echo getHeader("ユーザー登録");
+require '../common/auth.php';
+require '../common/database.php';
 
-  if(isLogin()) {
-      header('Location: ../memo/');
-      exit;
-  }  
+if (!isLogin()) {
+    header('Location: ../login/');
+    exit;
+}
+
+$user_name = getLoginUserName();
+$user_id = getLoginUserId();
+
+$memos = [];
+$database_handler = getDatabaseConnection();
+if ($statement = $database_handler->prepare(
+    "SELECT id, title, content, updated_at
+     FROM memos
+     WHERE user_id = :user_id
+     ORDER BY updated_at DESC"
+)) {
+    $statement->bindParam(':user_id', $user_id);
+    $statement->execute();
+
+    while ($result = $statement->fetch(PDO::FETCH_ASSOC)) {
+        array_push($memos, $result);
+    }
+}
+
+$edit_id = "";
+if (isset($_SESSION['select_memo'])) {
+    $edit_memo = $_SESSION['select_memo'];
+    $edit_id = $edit_memo['id'] ?? "";
+    $edit_title = $edit_memo['title'] ?? "";
+    $edit_content = $edit_memo['content'] ?? "";
+}
+
 ?>
 
-<body>
-  <div class="d-flex align-items-center justify-content-center h-100">
-    <form method="post" action="./action/register.php">
-      <div class="card rounded login-card-width shadow">
-        <div class="card-body">
-          <?php
-          if (isset($_SESSION['errors'])) {
-              echo '<div class="alert alert-danger" role="alert">';
-              foreach ($_SESSION['errors'] as $error) {
-                  echo "<div>{$error}</div>";
-              }   
-              echo '</div>';
-              unset($_SESSION['errors']);
-          }   
-          ?>
-          <div class="rounded-circle mx-auto border-gray border d-flex mt-3 icon-circle">
-            <img src="../public/images/animal_stand_zou.png" class="w-75 mx-auto p-2" alt="icon" />
-          </div>
-          <div class="d-flex justify-content-center">
-            <div class="mt-3 h2">SimpleMemo</div>
-          </div>
-          <div class="row mt-3">
-            <div class="offset-2 col-8 offset-2">
-              <label class="input-group w-100">
-                <span class="input-group-prepend">
-                  <span class="input-group-text"><i class="fas fa-file-signature"></i></span>
-                </span>
-                <input type="text" name="user_name" class="form-control" placeholder="ユーザー名" autocomplete="off"
-                  maxlength="255" />
-              </label>
-              <label class="input-group w-100">
-                <span class="input-group-prepend">
-                  <span class="input-group-text"><i class="far fa-envelope"></i></span>
-                </span>
-                <input type="text" name="user_email" class="form-control" placeholder="メールアドレス" autocomplete="off"
-                  maxlength="255" />
-              </label>
-              <label class="input-group w-100">
-                <span class="input-group-prepend">
-                  <span class="input-group-text"><i class="fas fa-key"></i></span>
-                </span>
-                <input type="password" name="user_password" class="form-control" placeholder="パスワード" autocomplete="off"
-                  maxlength="255" />
-              </label>
-              <button type="submit" class="form-control btn btn-success">
-                登録する
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </form>
-  </div>
-</body>
+<!DOCTYPE html>
+<html lang="ja">
+    <?php
+    include_once "../common/header.php";
+    echo getHeader("メモ投稿");
+    ?>
+    <body class="bg-white">
+        <div class="h-100">
+            <div class="row h-100 m-0 p-0">
+                <div class="col-3 h-100 m-0 p-0 border-left border-right border-gray">
+                    <div class="left-memo-menu d-flex justify-content-between pt-2">
+                        <div class="pl-3 pt-2">
+                            <?php echo $user_name; ?>さん、こんにちは。
+                        </div>
+                        <div class="pr-1">
+                            <a href="./action/add.php" class="btn btn-success"><i class="fas fa-plus"></i></a>
+                            <a href="./action/logout.php" class="btn btn-dark"><i class="fas fa-sign-out-alt"></i></a>
+                        </div>
+                    </div>
+                    <div class="left-memo-title h3 pl-3 pt-3">
+                        メモリスト
+                    </div>
+                    <div class="left-memo-list list-group-flush p-0">
+                        <?php if (empty($memos)): ?>
+                            <div class="pl-3 pt-3 h5 text-info text-center">
+                                <i class="far fa-surprise"></i>メモがありません。
+                            </div>
+                        <?php endif; ?>
 
+                        <?php foreach ($memos as $memo): ?>
+                            <a href="./action/select.php?id=<?php echo $memo['id']; ?>"
+                               class="list-group-item list-group-item-action <?php echo $edit_id == $memo['id'] ? 'active' : ''; ?>">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h5 class="mb-1"><?php echo $memo["title"]; ?></h5>
+                                    <small><?php echo date('Y/m/d H:i', strtotime($memo['updated_at'])); ?></small>
+                                </div>
+                                <p class="mb-1">
+                                    <?php
+                                    echo mb_strlen($memo['content']) <= 100
+                                        ? $memo['content']
+                                        : mb_substr($memo['content'], 0, 100) . "...";
+                                    ?>
+                                </p>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div class="col-9 h-100">
+                   <?php if (isset($_SESSION['select_memo'])): ?>
+        <form class="w-100 h-100" method="post">
+            <input type="hidden" name="edit_id" value="<?php echo $edit_id; ?>" />
+            <div id="memo-menu">
+                <button type="submit" class="btn btn-danger" formaction="./action/delete.php">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+                <button type="submit" class="btn btn-success" formaction="./action/update.php">
+                    <i class="fas fa-save"></i>
+                </button>
+            </div>
+            <input
+                type="text"
+                id="memo-title"
+                name="edit_title"
+                placeholder="タイトルを入力する..."
+                value="<?php echo $edit_title; ?>"
+            />
+            <textarea
+                id="memo-content"
+                name="edit_content"
+                placeholder="内容を入力する..."
+            ><?php echo $edit_content; ?></textarea>
+        </form>
+    <?php else: ?>
+        <div class="mt-3 alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            メモを新規作成するか選択してください。
+        </div>
+    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </body>
 </html>
